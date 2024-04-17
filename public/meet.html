@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue",
+          sans-serif;
+      }
+      body,
+      html {
+        height: 100%;
+        width: 100%;
+      }
+      .video-grid {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      }
+      video {
+        width: 100%;
+        aspect-ratio: 1/1;
+        object-fit: cover;
+        border: 1px solid black;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="video-grid">
+      <video muted="true" id="me"></video>
+    </div>
+    <script>
+      window.ROOM_ID = new URL(location.href).searchParams.get("id");
+    </script>
+    <script src="socket.io/socket.io.js"></script>
+    <script src="scripts/peerjs.min.js"></script>
+    <script type="module">
+      const videoGrid = document.querySelector(".video-grid");
+      const myVideo = videoGrid.querySelector("video#me");
+
+      const myStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      myVideo.srcObject = myStream;
+      playOnReady(myVideo);
+
+      const socket = io("/");
+      const peer = new Peer(undefined, {
+        host: "/",
+        port: 3001,
+      }).on("open", (USER_ID) => {
+        socket.emit("join", ROOM_ID, USER_ID);
+      });
+      const peers = {};
+
+      // Handle join
+      socket.on("join", (user) => {
+        const video = document.createElement("video");
+
+        // call him
+        const call = peer.call(user, myStream);
+        // store the call
+        peers[user] = call;
+        // get his stream
+        call.on("stream", (hisStream) => {
+          video.srcObject = hisStream;
+          videoGrid.append(video);
+          playOnReady(video);
+        });
+        call.on("close", () => video.remove());
+      });
+
+      // Handle calls
+      peer.on("call", (call) => {
+        // answer him
+        call.answer(myStream);
+        // store the calls
+        peers[call.peer] = call;
+        // get his stream
+        const video = document.createElement("video");
+        call.on("stream", (hisStream) => {
+          video.srcObject = hisStream;
+          videoGrid.append(video);
+          playOnReady(video);
+        });
+        call.on("close", () => video.remove());
+      });
+
+      // Handle leave
+      socket.on("leave", (user) => {
+        peers[user]?.close();
+      });
+
+      // Utilities
+      function playOnReady(video) {
+        video.onloadedmetadata = () => video.play();
+      }
+    </script>
+  </body>
+</html>
